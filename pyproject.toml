@@ -1,0 +1,29 @@
+[project]
+name = "gcal-mcp"
+version = "0.1.0"
+description = "MCP-сервер к Google Календарю: события, поиск по названию, свободные окна. Ядро отделено от адаптеров — им пользуется и отдельный процесс, и встроенный агент."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "vefmv" }]
+dependencies = [
+    "httpx>=0.27",
+    # Верхняя граница обязательна: в mcp 2.0 исчез mcp.server.fastmcp, на котором
+    # держится server.py. Правило куплено дважды — движком бота 30.07.2026
+    # и установкой соседнего сервера 31.07.2026.
+    "mcp>=1.2,<2",
+    # Тумблеры кнопок: файл правят руками, комментарии в нём часть смысла.
+    "pyyaml>=6,<7",
+    "tzdata",
+]
+
+[project.scripts]
+gcal-mcp = "gcal_mcp.server:main"
+gcal-mcp-tools = "gcal_mcp.table:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gcal_mcp"]
