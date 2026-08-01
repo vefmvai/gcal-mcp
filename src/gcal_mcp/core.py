@@ -149,15 +149,17 @@ async def find_events(client: CalendarClient, query: str, days_ahead: int = 180,
     return f"Найдено ({len(found)}) по запросу «{query}»:\n" + "\n".join(found)
 
 
-async def free_slots(client: CalendarClient, range: str = "", date_from: str = "",
-                     date_to: str = "", calendars: str = "",
-                     min_minutes: int = 30, day_start: str = "09:00",
-                     day_end: str = "21:00") -> str:
-    """Свободные окна: что НЕ занято по всем указанным календарям.
+async def free_windows(client: CalendarClient, range: str = "", date_from: str = "",
+                       date_to: str = "", calendars: str = "",
+                       min_minutes: int = 30, day_start: str = "09:00",
+                       day_end: str = "21:00"
+                       ) -> tuple[str, dict[str, list[tuple[datetime, datetime]]]]:
+    """Свободные окна числами: день (`ГГГГ-ММ-ДД`) → список интервалов.
 
-    Планировать день по списку занятого — значит считать в уме. Здесь Google
-    отдаёт занятость сразу по нескольким календарям, а окна между ней
-    считаются тут же.
+    Отделено от `free_slots` не для красоты. Свободные часы нужны не только
+    человеку глазами: по ним считается перегруз дня — «дел на шесть часов,
+    а свободно два». Считать это разбором готовой строки значит завести
+    второй дом у одной арифметики; строку рисует `free_slots` вот из этого.
     """
     time_min, time_max, label = resolve_range(client, range, date_from, date_to)
     targets = _ids(calendars, client.calendar_id)
@@ -181,25 +183,45 @@ async def free_slots(client: CalendarClient, range: str = "", date_from: str = "
     finish = datetime.fromisoformat(time_max)
     min_minutes = max(int(min_minutes or 30), 1)
 
-    lines: list[str] = []
+    windows: dict[str, list[tuple[datetime, datetime]]] = {}
     day = begin.replace(hour=0, minute=0, second=0, microsecond=0)
     while day < finish:
         window_start = max(day.replace(hour=start_h, minute=start_m), begin)
         window_end = min(day.replace(hour=end_h, minute=end_m), finish)
         cursor = window_start
-        free_today: list[str] = []
+        free_today: list[tuple[datetime, datetime]] = []
         for slot_start, slot_end in busy:
             if slot_end <= cursor or slot_start >= window_end:
                 continue
             if slot_start - cursor >= timedelta(minutes=min_minutes):
-                free_today.append(f"{cursor:%H:%M}–{slot_start:%H:%M}")
+                free_today.append((cursor, slot_start))
             cursor = max(cursor, slot_end)
         if window_end - cursor >= timedelta(minutes=min_minutes):
-            free_today.append(f"{cursor:%H:%M}–{window_end:%H:%M}")
+            free_today.append((cursor, window_end))
         if free_today and window_end > window_start:
-            lines.append(f"  {day:%d.%m}: " + ", ".join(free_today))
+            windows[f"{day:%Y-%m-%d}"] = free_today
         day += timedelta(days=1)
+    return label, windows
 
+
+async def free_slots(client: CalendarClient, range: str = "", date_from: str = "",
+                     date_to: str = "", calendars: str = "",
+                     min_minutes: int = 30, day_start: str = "09:00",
+                     day_end: str = "21:00") -> str:
+    """Свободные окна: что НЕ занято по всем указанным календарям.
+
+    Планировать день по списку занятого — значит считать в уме. Здесь Google
+    отдаёт занятость сразу по нескольким календарям, а окна между ней
+    считаются тут же.
+    """
+    label, windows = await free_windows(
+        client, range, date_from, date_to, calendars, min_minutes, day_start, day_end
+    )
+    lines = [
+        f"  {datetime.fromisoformat(day):%d.%m}: "
+        + ", ".join(f"{начало:%H:%M}–{конец:%H:%M}" for начало, конец in окна)
+        for day, окна in windows.items()
+    ]
     if not lines:
         return f"Свободных окон от {min_minutes} мин на «{label}» нет."
     header = f"Свободные окна ({label}, от {min_minutes} мин, {day_start}–{day_end}):"
