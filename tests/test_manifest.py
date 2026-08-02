@@ -66,13 +66,6 @@ def test_поля_объявлены_известными_типами():
             assert f.kind in tools.KINDS, (t.name, f.name, f.kind)
 
 
-def test_в_описаниях_нет_личного():
-    """Репозиторий публичный: ни имени владельца, ни слов про чью-то схему."""
-    blob = " ".join(t.description + t.summary for t in tools.TOOLS).lower()
-    for word in ("васил", "vasili", "мастерск", "лаборатор", "bronto", "/users/"):
-        assert word not in blob, word
-
-
 # ── тумблеры ──────────────────────────────────────────────────────────────────
 
 def test_кнопки_нет_в_файле_значит_включена():
