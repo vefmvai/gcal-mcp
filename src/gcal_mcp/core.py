@@ -49,9 +49,42 @@ def human_when(client: CalendarClient, event: dict[str, Any]) -> str:
 
 
 def brief(client: CalendarClient, event: dict[str, Any]) -> str:
+    """Строка события для списка.
+
+    Значок `📝` в конце значит «у события есть описание, и в нём что-то лежит».
+    Сам текст описания в список не идёт: полсотни событий с текстом внутри
+    съедят контекст. Значок — приглашение позвать `get_event`; без него
+    невидимое описание не отличается от пустого.
+    """
     summary = event.get("summary") or "(без названия)"
     location = f" @ {event['location']}" if event.get("location") else ""
-    return f"[{event['id']}] {human_when(client, event)} — {summary}{location}"
+    note = " 📝" if (event.get("description") or "").strip() else ""
+    return f"[{event['id']}] {human_when(client, event)} — {summary}{location}{note}"
+
+
+async def get_event(client: CalendarClient, event_id: str,
+                    calendar_id: str = "") -> str:
+    """Одно событие целиком: описание, место, время, отменено или живо.
+
+    Заведена 08.08.2026 по разбору промаха. У события в МФЦ номерок и код
+    лежали в описании, а описание не показывала НИ ОДНА кнопка — ни список,
+    ни поиск. Разговор кончился «открой приложение сам», хотя данные лежали
+    в одном запросе. Отдельная кнопка на одно событие, потому что описание
+    в списке — это цена на каждом событии ради одного нужного.
+    """
+    if not event_id:
+        return "Не сказано, какое событие показать."
+    target = calendar_id or client.calendar_id
+    event = await client.get(f"/calendars/{target}/events/{event_id}")
+    if not event:
+        return f"Событие {event_id} в календаре «{target}» не найдено."
+    lines = [brief(client, event)]
+    if event.get("status") == "cancelled":
+        lines.append("СОБЫТИЕ ОТМЕНЕНО — оно ещё лежит в календаре, но вычеркнуто.")
+    description = (event.get("description") or "").strip()
+    lines.append(f"описание:\n{description}" if description
+                 else "описание: пусто (в самом событии его нет)")
+    return "\n".join(lines)
 
 
 def resolve_range(client: CalendarClient, preset: str = "", date_from: str = "",

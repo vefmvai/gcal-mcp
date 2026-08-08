@@ -178,5 +178,64 @@ def test_несколько_календарей_разбираются_из_с�
     assert core._ids("", "основной") == ["основной"]
 
 
+# ── событие целиком ───────────────────────────────────────────────────────────
+#
+# Промах 07.08.2026: у события в МФЦ номерок лежал в описании, а описание
+# не показывала ни одна кнопка. Проверяем ровно это — что теперь показывает.
+
+СОБЫТИЕ = {
+    "id": "abc123",
+    "summary": "МФЦ",
+    "location": "Ленина 1",
+    "description": "Номерок 42, код домофона 1234",
+    "start": {"dateTime": "2026-08-05T10:00:00+03:00"},
+    "end": {"dateTime": "2026-08-05T11:00:00+03:00"},
+}
+
+
+def test_карточка_показывает_описание():
+    c = FakeClient({"/calendars/primary/events/abc123": СОБЫТИЕ})
+    out = asyncio.run(core.get_event(c, "abc123"))
+    assert "Номерок 42, код домофона 1234" in out
+
+
+def test_список_помечает_событие_с_описанием_но_текст_не_печатает():
+    """Значок есть, текста нет: иначе полсотни событий утащат весь контекст."""
+    c = FakeClient({})
+    строка = core.brief(c, СОБЫТИЕ)
+    assert "📝" in строка and "Номерок" not in строка
+
+
+def test_без_описания_значка_нет():
+    c = FakeClient({})
+    голое = {k: v for k, v in СОБЫТИЕ.items() if k != "description"}
+    assert "📝" not in core.brief(c, голое)
+
+
+def test_пустое_описание_названо_пустым():
+    """«Пусто» и «не вижу» — разные ответы. Раньше коуч мог сказать только второе."""
+    c = FakeClient({"/calendars/primary/events/abc123":
+                    {**СОБЫТИЕ, "description": "   "}})
+    out = asyncio.run(core.get_event(c, "abc123"))
+    assert "пусто" in out
+
+
+def test_отменённое_событие_названо_отменённым():
+    c = FakeClient({"/calendars/primary/events/abc123":
+                    {**СОБЫТИЕ, "status": "cancelled"}})
+    assert "ОТМЕНЕНО" in asyncio.run(core.get_event(c, "abc123"))
+
+
+def test_чужой_календарь_спрашивается_у_него_а_не_у_основного():
+    c = FakeClient({"/calendars/family/events/abc123": СОБЫТИЕ})
+    asyncio.run(core.get_event(c, "abc123", calendar_id="family"))
+    assert ("GET", "/calendars/family/events/abc123") in c.calls
+
+
+def test_пропавшее_событие_не_притворяется_найденным():
+    c = FakeClient({})
+    assert "не найдено" in asyncio.run(core.get_event(c, "abc123"))
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
